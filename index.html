@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spark MIDI Bridge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1F4; --panel:#FFFFFF; --ink:#18222C; --muted:#5E6B77; --line:#CCD4DB;
+  --amber:#C9791A; --amber-soft:#F6E3C8; --ok:#2E7D5B; --err:#B3372E;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121B23; --panel:#1B2731; --ink:#ECE7DC; --muted:#8C99A5; --line:#2C3A46;
+    --amber:#F2A93B; --amber-soft:#3A2C17; --ok:#5CC49A; --err:#EF7A6E;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121B23; --panel:#1B2731; --ink:#ECE7DC; --muted:#8C99A5; --line:#2C3A46;
+  --amber:#F2A93B; --amber-soft:#3A2C17; --ok:#5CC49A; --err:#EF7A6E;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  font-size:16px;line-height:1.5}
+main{max-width:560px;margin:0 auto;padding:16px}
+h1{font-family:"Barlow Condensed","Noto Sans KR",sans-serif;font-weight:700;font-size:2rem;
+  letter-spacing:.01em;margin:4px 0 12px}
+.links{display:grid;gap:10px;margin-bottom:18px}
+.link{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:12px 14px}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--line);flex:none}
+.dot.on{background:var(--ok)} .dot.busy{background:var(--amber)} .dot.err{background:var(--err)}
+.link .txt{flex:1;min-width:0}
+.link .name{font-weight:700}
+.link .sub{color:var(--muted);font-size:.85rem;overflow-wrap:anywhere}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);
+  background:var(--bg);color:var(--ink);padding:9px 14px;min-height:44px}
+button:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+button:disabled{opacity:.45;cursor:default}
+.pads{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.pad{position:relative;background:var(--panel);border:2px solid var(--line);border-radius:14px;
+  padding:14px;min-height:150px;display:flex;flex-direction:column;justify-content:space-between;text-align:left}
+.pad .num{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:4.2rem;line-height:.9}
+.pad .map{color:var(--muted);font-size:.85rem}
+.pad.active{border-color:var(--amber);background:var(--amber-soft)}
+.pad.active .num{color:var(--amber)}
+.pad.hit{transform:scale(.97)}
+.pad.learning{border-style:dashed;border-color:var(--amber)}
+.pad .learn{position:absolute;top:10px;right:10px;min-height:36px;padding:4px 10px;font-size:.85rem}
+.extra{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.extra .pad{min-height:96px}
+.extra .num{font-size:1.9rem}
+.note{color:var(--muted);font-size:.9rem;margin:18px 0 8px}
+details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+summary{cursor:pointer;font-weight:500}
+#log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;max-height:220px;overflow:auto;
+  white-space:pre-wrap;margin:8px 0 0;color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+@media (prefers-reduced-motion: reduce){.pad.hit{transform:none}}
+html{-webkit-text-size-adjust:100%}
+:root{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+button,.pad{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.pad{cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.warn{background:var(--amber-soft);border:1px solid var(--amber);border-radius:10px;padding:10px 14px;margin:0 0 14px;font-size:.9rem}
+.warn[hidden]{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>Spark MIDI Bridge</h1>
+<div class="warn" id="warn" hidden></div>
+
+  <section class="links" aria-label="연결 상태">
+    <div class="link">
+      <span class="dot" id="ampDot"></span>
+      <div class="txt"><div class="name">앰프</div><div class="sub" id="ampText">연결 안 됨</div></div>
+      <button id="btnAmp">앰프 연결</button>
+    </div>
+    <div class="link">
+      <span class="dot" id="midiDot"></span>
+      <div class="txt"><div class="name" id="midiName">페달 (Web MIDI)</div><div class="sub" id="midiText">꺼짐</div></div>
+      <button id="btnMidi">MIDI 켜기</button>
+    </div>
+  </section>
+
+  <section class="pads" id="pads" aria-label="프리셋"></section>
+  <section class="extra" id="extras" aria-label="추가 기능"></section>
+
+  <p class="note">각 칸의 ‘학습’을 누르고 페달을 밟으면 그 PC 번호가 해당 기능에 연결됩니다. 학습 전에는 PC 0~3을 프리셋 1~4로 씁니다. 설정은 이 브라우저에 저장됩니다.</p>
+
+  <details>
+    <summary>로그</summary>
+    <div class="row">
+      <button id="btnReset">매핑 초기화</button>
+      <button id="btnClear">로그 지우기</button>
+    </div>
+    <pre id="log"></pre>
+  </details>
+</main>
+
+<script>
+"use strict";
+/* Spark BLE protocol: adapted from lucanenni/spark-go-utils (MIT License). */
+const SERVICE_UUID="0000ffc0-0000-1000-8000-00805f9b34fb";
+const WRITE_UUID="0000ffc1-0000-1000-8000-00805f9b34fb";
+const NOTIFY_UUID="0000ffc2-0000-1000-8000-00805f9b34fb";
+const PRESET_HEADER=[0x01,0xFE,0x00,0x00,0x53,0xFE,0x1A,0,0,0,0,0,0,0,0,0];
+const TUNER_HEADER=[0x01,0xFE,0x00,0x00,0x53,0xFE,0x19,0,0,0,0,0,0,0,0,0];
+let seq=0x20;
+function patchPayload(n){const id=n-1;const inner=[0xF0,0x01,seq&0xFF,id,0x01,0x38,0x00,0x00,id,0xF7];seq=(seq+1)&0xFF;return new Uint8Array([...PRESET_HEADER,...inner]);}
+function tunerPayload(on){const inner=on?[0xF0,0x01,seq&0xFF,0x42,0x01,0x65,0x01,0x43,0xF7]:[0xF0,0x01,seq&0xFF,0x43,0x01,0x65,0x01,0x42,0xF7];seq=(seq+1)&0xFF;return new Uint8Array([...TUNER_HEADER,...inner]);}
+function hex(b){return Array.from(b).map(x=>x.toString(16).toUpperCase().padStart(2,"0")).join(" ");}
+
+const $=id=>document.getElementById(id);
+const logEl=$("log");
+function log(msg){const t=new Date().toLocaleTimeString();logEl.textContent=`${t}  ${msg}\n`+logEl.textContent.slice(0,6000);}
+
+/* ---- mapping ---- */
+const ACTIONS=[
+  {key:"p1",label:"1",kind:"preset",n:1},{key:"p2",label:"2",kind:"preset",n:2},
+  {key:"p3",label:"3",kind:"preset",n:3},{key:"p4",label:"4",kind:"preset",n:4},
+  {key:"tuner",label:"Tuner",kind:"tuner"},
+];
+const DEFAULT_MAP={p1:0,p2:1,p3:2,p4:3,tuner:null};
+let map=Object.assign({},DEFAULT_MAP);
+try{const s=localStorage.getItem("sparkMidiMap");if(s)map=Object.assign({},DEFAULT_MAP,JSON.parse(s));}catch(e){}
+function saveMap(){try{localStorage.setItem("sparkMidiMap",JSON.stringify(map));}catch(e){}}
+
+let learning=null, activePreset=null, tunerOn=false;
+const padEls={};
+function buildPads(){
+  $("pads").innerHTML="";$("extras").innerHTML="";
+  ACTIONS.forEach(a=>{
+    const el=document.createElement("div");
+    el.className="pad";el.setAttribute("role","button");el.tabIndex=0;
+    el.innerHTML=`<div class="num">${a.label}</div><div class="map"></div><button class="learn" type="button">학습</button>`;
+    el.addEventListener("click",ev=>{if(ev.target.classList.contains("learn"))return;run(a);});
+    el.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();run(a);}});
+    el.querySelector(".learn").addEventListener("click",()=>{learning=learning===a.key?null:a.key;render();});
+    (a.kind==="preset"?$("pads"):$("extras")).appendChild(el);
+    padEls[a.key]=el;
+  });
+  render();
+}
+function render(){
+  ACTIONS.forEach(a=>{
+    const el=padEls[a.key];
+    const pc=map[a.key];
+    el.querySelector(".map").textContent=learning===a.key?"페달을 밟으세요…":(pc==null?"PC 미지정":`PC ${pc}`);
+    el.classList.toggle("learning",learning===a.key);
+    el.classList.toggle("active",a.kind==="preset"?activePreset===a.n:tunerOn);
+    el.querySelector(".learn").textContent=learning===a.key?"취소":"학습";
+  });
+}
+
+/* ---- BLE ---- */
+let device=null, writeChar=null;
+function setAmp(state,text){$("ampDot").className="dot "+(state||"");$("ampText").textContent=text;}
+async function send(bytes,what){
+  if(!writeChar){log("앰프가 연결되지 않았습니다");return false;}
+  try{
+    if(writeChar.properties.writeWithoutResponse)await writeChar.writeValueWithoutResponse(bytes);
+    else await writeChar.writeValue(bytes);
+    log(`TX ${what}: ${hex(bytes)}`);return true;
+  }catch(e){log(`전송 실패 (${what}): ${e.message}`);return false;}
+}
+async function connectAmp(){
+  if(!navigator.bluetooth){setAmp("err","Web Bluetooth 미지원 — iPhone/iPad는 Bluefy 앱에서 여세요");return;}
+  try{
+    setAmp("busy","기기 선택 중");
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE_UUID]});
+    device.addEventListener("gattserverdisconnected",()=>{writeChar=null;setAmp("err","연결 끊김 — 다시 연결을 누르세요");$("btnAmp").textContent="다시 연결";});
+    await gattConnect();
+  }catch(e){
+    if(e.name==="NotFoundError"){setAmp("","연결 안 됨");}
+    else{setAmp("err",e.message);log("앰프 연결 오류: "+e.message);}
+  }
+}
+async function gattConnect(){
+  setAmp("busy",`${device.name||"기기"} 연결 중`);
+  const server=await device.gatt.connect();
+  const svc=await server.getPrimaryService(SERVICE_UUID);
+  writeChar=await svc.getCharacteristic(WRITE_UUID);
+  try{const n=await svc.getCharacteristic(NOTIFY_UUID);await n.startNotifications();}catch(e){}
+  setAmp("on",`${device.name||"기기"} 연결됨`);$("btnAmp").textContent="다시 연결";
+  log("앰프 연결됨: "+(device.name||""));
+}
+$("btnAmp").addEventListener("click",async()=>{
+  if(device&&!device.gatt.connected){try{await gattConnect();return;}catch(e){device=null;setAmp("err","재연결 실패 — 한 번 더 눌러 기기를 다시 고르세요");log("재연결 실패: "+e.message);return;}}
+  connectAmp();
+});
+
+/* ---- actions ---- */
+async function run(a){
+  const el=padEls[a.key];el.classList.add("hit");setTimeout(()=>el.classList.remove("hit"),150);
+  if(a.kind==="preset"){if(await send(patchPayload(a.n),`프리셋 ${a.n}`)){activePreset=a.n;render();}}
+  else if(a.kind==="tuner"){const next=!tunerOn;if(await send(tunerPayload(next),`Tuner ${next?"ON":"OFF"}`)){tunerOn=next;render();}}
+}
+
+/* ---- Web MIDI ---- */
+let midi=null;
+function setMidi(state,text){$("midiDot").className="dot "+(state||"");$("midiText").textContent=text;}
+function onMidi(ev){handleMidi(ev.data);}
+function handleMidi(data){
+  const [st,d1,d2]=data;const type=st&0xF0,ch=(st&0x0F)+1;
+  if(type===0xF8||st===0xFE)return;
+  log(`MIDI in ${hex(data)} (ch${ch})`);
+  if(type!==0xC0)return;
+  const pc=d1;
+  if(learning){
+    for(const k in map)if(map[k]===pc)map[k]=null;
+    map[learning]=pc;log(`학습: PC ${pc} → ${learning}`);learning=null;saveMap();render();return;
+  }
+  const a=ACTIONS.find(x=>map[x.key]===pc);
+  if(a)run(a);else log(`PC ${pc}: 연결된 기능 없음`);
+}
+function bindInputs(){
+  const names=[];
+  midi.inputs.forEach(inp=>{inp.onmidimessage=onMidi;names.push(inp.name||"이름 없음");});
+  if(names.length)setMidi("on",names.join(", "));
+  else setMidi("err","입력 장치 없음 — Bluetooth MIDI Connect에서 페달 연결 확인");
+}
+$("btnMidi").addEventListener("click",async()=>{
+  if(!navigator.requestMIDIAccess){await bleMidiClick();return;}
+  try{
+    setMidi("busy","권한 요청 중");
+    midi=await navigator.requestMIDIAccess({sysex:false});
+    midi.onstatechange=()=>bindInputs();
+    bindInputs();$("btnMidi").textContent="장치 새로고침";
+  }catch(e){setMidi("err","MIDI 권한 거부됨: "+e.message);}
+});
+
+/* ---- BLE MIDI direct (iOS/Bluefy has no Web MIDI) ---- */
+const BLE_MIDI_SERVICE="03b80e5a-ede8-4b33-a751-6ce34ec4c700";
+const BLE_MIDI_CHAR="7772e5db-3868-4112-a1a9-f2669d106bf3";
+let pedal=null;
+function midiLen(s){if(s>=0xF0)return 0;return((s&0xF0)===0xC0||(s&0xF0)===0xD0)?1:2;}
+function parseBleMidi(dv){
+const b=new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength);
+let i=1,st=0;
+while(i<b.length){
+let v=b[i];
+if(v&0x80){i++;if(i>=b.length)break;v=b[i];
+if(v&0x80){if(v>=0xF8){handleMidi([v]);i++;continue;}st=v;i++;}}
+if(!st){i++;continue;}
+if(st>=0xF0){while(i<b.length&&!(b[i]&0x80))i++;st=0;continue;}
+const need=midiLen(st),d=[];
+while(d.length<need&&i<b.length&&!(b[i]&0x80))d.push(b[i++]);
+if(d.length===need)handleMidi([st,...d]);
+}
+}
+const onBleMidi=e=>parseBleMidi(e.target.value);
+async function pedalGattConnect(){
+setMidi("busy",`${pedal.name||"페달"} 연결 중`);
+const server=await pedal.gatt.connect();
+const svc=await server.getPrimaryService(BLE_MIDI_SERVICE);
+const ch=await svc.getCharacteristic(BLE_MIDI_CHAR);
+ch.addEventListener("characteristicvaluechanged",onBleMidi);
+await ch.startNotifications();
+setMidi("on",`${pedal.name||"페달"} 연결됨 (BLE MIDI)`);$("btnMidi").textContent="페달 다시 연결";
+log("페달 연결됨: "+(pedal.name||""));
+}
+async function bleMidiClick(){
+if(!navigator.bluetooth){setMidi("err","Web Bluetooth 미지원 — iPhone/iPad는 Bluefy 앱에서 여세요");return;}
+if(pedal&&!pedal.gatt.connected){
+try{await pedalGattConnect();}catch(e){pedal=null;setMidi("err","재연결 실패 — 한 번 더 눌러 기기를 다시 고르세요");log("페달 재연결 실패: "+e.message);}
+return;
+}
+try{
+setMidi("busy","기기 선택 중");
+pedal=await navigator.bluetooth.requestDevice({filters:[{services:[BLE_MIDI_SERVICE]}]});
+pedal.addEventListener("gattserverdisconnected",()=>setMidi("err","페달 연결 끊김 — 다시 연결을 누르세요"));
+await pedalGattConnect();
+}catch(e){
+if(e.name==="NotFoundError")setMidi("","꺼짐");
+else{setMidi("err",e.message);log("페달 연결 오류: "+e.message);}
+}
+}
+async function autoReconnect(){
+if(device&&!device.gatt.connected){try{await gattConnect();}catch(e){log("앰프 자동 재연결 실패");}}
+if(pedal&&!pedal.gatt.connected){try{await pedalGattConnect();}catch(e){log("페달 자동 재연결 실패");}}
+}
+
+/* ---- keep screen awake ---- */
+let wakeLock=null;
+async function keepAwake(){try{if("wakeLock" in navigator)wakeLock=await navigator.wakeLock.request("screen");}catch(e){}}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){keepAwake();autoReconnect();}});
+keepAwake();
+
+$("btnReset").addEventListener("click",()=>{map=Object.assign({},DEFAULT_MAP);saveMap();render();log("매핑 초기화");});
+$("btnClear").addEventListener("click",()=>{logEl.textContent="";});
+if(!navigator.bluetooth){const w=$("warn");w.hidden=false;w.textContent="이 브라우저는 Web Bluetooth를 지원하지 않습니다. iPhone/iPad에서는 Safari·Chrome이 아니라 App Store의 ‘Bluefy’ 브라우저에서 이 페이지를 여세요.";}
+else if(!navigator.requestMIDIAccess){$("midiName").textContent="페달 (BLE MIDI)";$("btnMidi").textContent="페달 연결";$("midiText").textContent="연결 안 됨";}
+buildPads();
+</script>
+</body>
+</html>
