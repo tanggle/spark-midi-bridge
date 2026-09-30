@@ -186,7 +186,7 @@ async function connectAmp(){
 }
 async function gattConnect(){
   setAmp("busy",`${device.name||"기기"} 연결 중`);
-  const server=await device.gatt.connect();
+  const server=await withTimeout(device.gatt.connect(),10000,device);
   const svc=await server.getPrimaryService(SERVICE_UUID);
   writeChar=await svc.getCharacteristic(WRITE_UUID);
   try{const n=await svc.getCharacteristic(NOTIFY_UUID);await n.startNotifications();}catch(e){}
@@ -194,7 +194,7 @@ async function gattConnect(){
   log("앰프 연결됨: "+(device.name||""));
 }
 $("btnAmp").addEventListener("click",async()=>{
-  if(device&&!device.gatt.connected){try{await gattConnect();return;}catch(e){device=null;setAmp("err","재연결 실패 — 한 번 더 눌러 기기를 다시 고르세요");log("재연결 실패: "+e.message);return;}}
+  if(device&&!device.gatt.connected){try{await gattConnect();return;}catch(e){device=null;setAmp("err","재연결 실패 — iPhone 블루투스 설정에서 이 기기를 지운 뒤, 한 번 더 눌러 다시 고르세요");log("재연결 실패: "+e.message);return;}}
   connectAmp();
 });
 
@@ -241,6 +241,12 @@ $("btnMidi").addEventListener("click",async()=>{
 /* ---- BLE MIDI direct (iOS/Bluefy has no Web MIDI) ---- */
 const BLE_MIDI_SERVICE="03b80e5a-ede8-4b33-a751-6ce34ec4c700";
 const BLE_MIDI_CHAR="7772e5db-3868-4112-a1a9-f2669d106bf3";
+function withTimeout(p,ms,dev){
+return new Promise((res,rej)=>{
+const t=setTimeout(()=>{try{dev.gatt.disconnect();}catch(_){}rej(new Error("연결 시간 초과"));},ms);
+p.then(v=>{clearTimeout(t);res(v);},e=>{clearTimeout(t);rej(e);});
+});
+}
 let pedal=null;
 /* 이름이 있는 기기만 표시: 영문/숫자로 시작하는 이름 */
 const NAMED_FILTERS="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".split("").map(c=>({namePrefix:c}));
@@ -262,7 +268,7 @@ if(d.length===need)handleMidi([st,...d]);
 const onBleMidi=e=>parseBleMidi(e.target.value);
 async function pedalGattConnect(){
 setMidi("busy",`${pedal.name||"페달"} 연결 중`);
-const server=await pedal.gatt.connect();
+const server=await withTimeout(pedal.gatt.connect(),10000,pedal);
 const svc=await server.getPrimaryService(BLE_MIDI_SERVICE);
 const ch=await svc.getCharacteristic(BLE_MIDI_CHAR);
 ch.addEventListener("characteristicvaluechanged",onBleMidi);
@@ -273,7 +279,7 @@ log("페달 연결됨: "+(pedal.name||""));
 async function bleMidiClick(){
 if(!navigator.bluetooth){setMidi("err","Web Bluetooth 미지원 — iPhone/iPad는 Bluefy 앱에서 여세요");return;}
 if(pedal&&!pedal.gatt.connected){
-try{await pedalGattConnect();}catch(e){pedal=null;setMidi("err","재연결 실패 — 한 번 더 눌러 기기를 다시 고르세요");log("페달 재연결 실패: "+e.message);}
+try{await pedalGattConnect();}catch(e){pedal=null;setMidi("err","재연결 실패 — iPhone 블루투스 설정에서 이 기기를 지운 뒤, 한 번 더 눌러 다시 고르세요");log("페달 재연결 실패: "+e.message);}
 return;
 }
 try{
