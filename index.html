@@ -176,7 +176,7 @@ async function connectAmp(){
   if(!navigator.bluetooth){setAmp("err","Web Bluetooth 미지원 — iPhone/iPad는 Bluefy 앱에서 여세요");return;}
   try{
     setAmp("busy","기기 선택 중");
-    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE_UUID]});
+    device=await navigator.bluetooth.requestDevice({filters:NAMED_FILTERS,optionalServices:[SERVICE_UUID]});
     device.addEventListener("gattserverdisconnected",()=>{writeChar=null;setAmp("err","연결 끊김 — 다시 연결을 누르세요");$("btnAmp").textContent="다시 연결";});
     await gattConnect();
   }catch(e){
