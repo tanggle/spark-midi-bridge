@@ -242,6 +242,8 @@ $("btnMidi").addEventListener("click",async()=>{
 const BLE_MIDI_SERVICE="03b80e5a-ede8-4b33-a751-6ce34ec4c700";
 const BLE_MIDI_CHAR="7772e5db-3868-4112-a1a9-f2669d106bf3";
 let pedal=null;
+/* 이름이 있는 기기만 표시: 영문/숫자로 시작하는 이름 */
+const NAMED_FILTERS="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".split("").map(c=>({namePrefix:c}));
 function midiLen(s){if(s>=0xF0)return 0;return((s&0xF0)===0xC0||(s&0xF0)===0xD0)?1:2;}
 function parseBleMidi(dv){
 const b=new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength);
@@ -276,7 +278,7 @@ return;
 }
 try{
 setMidi("busy","기기 선택 중");
-pedal=await navigator.bluetooth.requestDevice({filters:[{services:[BLE_MIDI_SERVICE]}]});
+pedal=await navigator.bluetooth.requestDevice({filters:NAMED_FILTERS,optionalServices:[BLE_MIDI_SERVICE]});
 pedal.addEventListener("gattserverdisconnected",()=>setMidi("err","페달 연결 끊김 — 다시 연결을 누르세요"));
 await pedalGattConnect();
 }catch(e){
